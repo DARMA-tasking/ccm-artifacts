@@ -1,7 +1,7 @@
 ### Artifact: `FWMP_constraints.f95`
 
 #### Description:
-A Fortran 95 program to verify the following MILP assignment constraints in the conference article: (16), (24), (25), (26), and (27) as realized for the examples of Figures 2 & 3.
+A Fortran 95 program to verify the following MILP assignment constraints in the conference article: (16), (24), (25), (26), and (27), with example data corresponding to that of Figures 2 & 3 and equations (28) & (29).
 
 #### Requirements:
 * a Fortran 95-compatible compiler, e.g. [gfortran](https://gcc.gnu.org/wiki/GFortran);
