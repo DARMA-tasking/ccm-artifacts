@@ -1,23 +1,23 @@
 !                           DARMA Toolkit v. 1.0.0
-! 
+!
 ! Copyright 2024 National Technology & Engineering Solutions of Sandia, LLC
 ! (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
 ! Government retains certain rights in this software.
-! 
+!
 ! Redistribution and use in source and binary forms, with or without
 ! modification, are permitted provided that the following conditions are met:
-! 
+!
 ! * Redistributions of source code must retain the above copyright notice,
 !   this list of conditions and the following disclaimer.
-! 
+!
 ! * Redistributions in binary form must reproduce the above copyright notice,
 !   this list of conditions and the following disclaimer in the documentation
 !   and/or other materials provided with the distribution.
-! 
+!
 ! * Neither the name of the copyright holder nor the names of its
 !   contributors may be used to endorse or promote products derived from this
 !   software without specific prior written permission.
-! 
+!
 ! THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 ! AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 ! IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -29,9 +29,9 @@
 ! CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ! ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 ! POSSIBILITY OF SUCH DAMAGE.
-! 
+!
 ! Questions? Contact darma@sandia.gov
-! 
+!
 
 program FWMP_constraints
   implicit none
@@ -71,7 +71,11 @@ program FWMP_constraints
   integer, allocatable :: psi_ub2_i(:,:,:)
 
   ! sums in paper formulas
-  integer :: sums(4)
+  integer :: matrix_prod, matrix_sum, tensor_prod, tensor_sums(4)
+
+  ! constraint checks
+  integer :: n_checks, n_errors
+  logical :: check_constraints
 
   print *
   print *, "### Full Work Model Problem Example"
@@ -142,7 +146,51 @@ program FWMP_constraints
   call print_logical_matrix("phi", phi_l)
   call print_integer_matrix("phi", phi_i)
   print *
-  
+
+  ! generate integer block matrix relations
+  print *, "# Integer block matrix relations:"
+  print *, "-----------------------------------"
+  print *, "i   n   k   u  chi  *  +  phi check"
+  print *, "-----------------------------------"
+  n_checks = 0
+  n_errors = 0
+  ! iterate over tensor slices
+  do ii = 1, I
+     ! iterate over from rank indices
+     do nn = 1, N
+        ! initialize sum
+        matrix_sum = 0
+
+        ! iterate over to task indices
+        do kk = 1, K
+           ! update sum
+           matrix_prod = u_i(kk,nn) * chi_i(ii,kk)
+           matrix_sum = matrix_sum + matrix_prod
+
+           ! check and print innermost loop results
+           check_constraints = phi_i(ii,nn) >= matrix_prod
+           n_checks = n_checks + 1
+           if (.not. check_constraints) then
+              n_errors = n_errors + 1
+           endif
+           print "(I2,I4,I4,I4,I4,I4,L12)", &
+                & ii, nn, kk, u_i(kk,nn), chi_i(ii,kk), matrix_prod, &
+                & check_constraints
+        end do ! kk
+
+        ! store and check results aggregated at i,n level
+        check_constraints = phi_i(ii,nn) <= matrix_sum
+        n_checks = n_checks + 1
+        if (.not. check_constraints) then
+           n_errors = n_errors + 1
+        endif
+        print "(I25, I4, L5)", matrix_sum, phi_i(ii,nn), &
+             & check_constraints
+     end do ! nn
+  end do ! ii
+  print *, "-----------------------------------"
+  print *
+
   ! compute and print communication-rank tensors
   psi_i = merge(1, 0, psi_l)
   do mm = 1, M
@@ -156,11 +204,12 @@ program FWMP_constraints
   end do
   print *
 
-  ! generate integer communication tensor relations
-  print *, "# Integer communication tensor relations:"
-  print *, "------------------------------------------------------"
-  print *, "m   j   i   l   k   w  chi chiT *   +  lb  psi ub1 ub2"
-  print *, "------------------------------------------------------"
+  ! generate integer communication tensor constraints
+  print *, "# Integer communication tensor constraints:"
+  print *, "------------------------------------------------------------"
+  print *, "m   j   i   l   k   w  chi chiT *   +  lb  psi ub1 ub2 check"
+  print *, "------------------------------------------------------------"
+  n_errors = 0
   ! iterate over tensor slices
   do mm = 1, M
      ! iterate over from rank indices
@@ -168,37 +217,55 @@ program FWMP_constraints
         ! iterate over to rank indices
         do ii = 1, I
            ! initialize sums
-           sums = 0
+           tensor_sums = 0
 
            ! iterate over from task indices
            do ll = 1, K
               ! iterate over to task indices
               do kk = 1, K
                  ! update sums
-                 sums(1) = sums(1) + chi_i(ii,kk) * chi_i(jj,ll) * w_i(kk,ll,mm) 
-                 sums(2) = sums(2) + chi_i(ii,kk) * w_i(kk,ll,mm) 
-                 sums(3) = sums(3) + chi_i(jj,ll) * w_i(kk,ll,mm) 
-                 sums(4) = sums(4) + (chi_i(ii,kk) + chi_i(jj,ll)) * w_i(kk,ll,mm)
-                 
+                 tensor_prod = chi_i(ii,kk) * chi_i(jj,ll) * w_i(kk,ll,mm)
+                 tensor_sums(1) = tensor_sums(1) + tensor_prod
+                 tensor_sums(2) = tensor_sums(2) + chi_i(ii,kk) * w_i(kk,ll,mm)
+                 tensor_sums(3) = tensor_sums(3) + chi_i(jj,ll) * w_i(kk,ll,mm)
+                 tensor_sums(4) = tensor_sums(4) + (chi_i(ii,kk) + chi_i(jj,ll)) * w_i(kk,ll,mm)
+
                  ! print innermost loop results
                  print "(I2,I4,I4,I4,I4,I4,I4,I4,I4)", &
                       & mm, jj, ii, ll, kk, w_i(kk,ll,mm), chi_i(ii,kk), chi_i(jj,ll), &
-                      & chi_i(ii,kk) * chi_i(jj,ll) * w_i(kk,ll,mm)
+                      & tensor_prod
               end do ! kk
            end do ! ll
 
-           ! store and print results aggregated at i,j level
-           psi_ub1_i(ii,jj,mm) = sums(2)
-           psi_ub2_i(ii,jj,mm) = sums(3)
-           psi_lb_i(ii,jj,mm) = sums(4) - 1
-           print "(I38, I4, I4, I4, I4)", sums(1), &
+           ! store and check  results aggregated at i,j,m level
+           psi_ub1_i(ii,jj,mm) = tensor_sums(2)
+           check_constraints = psi_i(ii,jj,mm) <= psi_ub1_i(ii,jj,mm)
+           n_checks = n_checks + 1
+           if (.not. check_constraints) then
+              n_errors = n_errors + 1
+           endif
+           psi_ub2_i(ii,jj,mm) = tensor_sums(3)
+           check_constraints = check_constraints .and. psi_i(ii,jj,mm) <= psi_ub1_i(ii,jj,mm)
+           n_checks = n_checks + 1
+           if (.not. check_constraints) then
+              n_errors = n_errors + 1
+           endif
+           psi_lb_i(ii,jj,mm) = tensor_sums(4) - 1
+           check_constraints = check_constraints .and. psi_lb_i(ii,jj,mm) <= psi_i(ii,jj,mm)
+           n_checks = n_checks + 1
+           if (.not. check_constraints) then
+              n_errors = n_errors + 1
+           endif
+           print "(I38, I4, I4, I4, I4, L5)", tensor_sums(1), &
                 & psi_lb_i(ii,jj,mm), psi_i(ii,jj,mm), &
-                & psi_ub1_i(ii,jj,mm), psi_ub2_i(ii,jj,mm)
+                & psi_ub1_i(ii,jj,mm), psi_ub2_i(ii,jj,mm), &
+                & check_constraints
         end do ! jj
      end do ! ii
-     print *, "   --------------------------------------------------"
+     print *, "   -------------------------------------------------------"
   end do ! mm
-  
+  print *
+
   ! print tensor bounds
   do mm = 1, M
      call print_integer_matrix("psi_lb::"//trim(int_to_str(mm)), psi_lb_i(:,:,mm))
@@ -211,6 +278,8 @@ program FWMP_constraints
   do mm = 1, M
      call print_integer_matrix("psi_ub2::"//trim(int_to_str(mm)), psi_ub2_i(:,:,mm))
   end do
+  print *
+  print *, "# Verified ", trim(int_to_str(n_checks)), " integer constraints"
   print *
 
   ! terminate program
@@ -229,7 +298,11 @@ program FWMP_constraints
   deallocate(phi_l)
   deallocate(u_i)
   deallocate(u_l)
-  print *, "Program completed without errors ###"
+  if (n_errors > 0) then
+     print *, "Program found ", trim(int_to_str(n_errors)), " errors ###"
+  else
+     print *, "Program completed without errors ###"
+  endif
   print *
 
 contains
@@ -275,7 +348,7 @@ contains
        if (ios /= 0) exit
        if (i > 0 .and. i <= n_rows .and. j > 0 .and. j <= n_cols) mat(i,j) = .TRUE.
     end do
-    
+
     ! close file
     close(1)
 
@@ -325,7 +398,7 @@ contains
        m = m + 1
        if (k > 0 .and. k <= n_slices .and. l > 0 .and. l <= n_slices) ten(k,l,m) = .TRUE.
     end do
-    
+
     ! close file
     close(1)
 
@@ -377,4 +450,3 @@ contains
   end function int_to_str
 
 end program FWMP_constraints
-  
