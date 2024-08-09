@@ -79,7 +79,7 @@ program FWMP_constraints
   integer :: matrix_prod, matrix_sum, tensor_prod, tensor_sums(4)
 
   ! constraint checks
-  integer :: n_checks, n_errors
+  integer :: n_checks = 0, n_errors = 0
   logical :: check_constraints
 
   ! parse command line arguments
@@ -169,8 +169,9 @@ program FWMP_constraints
     print *, "--------"
     do nn = 1, N
       check_constraints = sum(phi_i(:,nn)) == 1
-      print "(I2, L5)", nn, check_constraints
+      n_checks = n_checks + 1
       if (.not. check_constraints) n_errors = n_errors + 1
+      print "(I2, L5)", nn, check_constraints
     end do ! nn
     print *, "--------"
   end if ! no_subclusters
@@ -181,8 +182,6 @@ program FWMP_constraints
   print *, "-----------------------------------"
   print *, "i   n   k   u  chi  *  +  phi check"
   print *, "-----------------------------------"
-  n_checks = 0
-  n_errors = 0
   ! iterate over tensor slices
   do ii = 1, I
     ! iterate over from rank indices
@@ -234,7 +233,6 @@ program FWMP_constraints
   print *, "------------------------------------------------------------"
   print *, "m   j   i   l   k   w  chi chiT *   +  lb  psi ub1 ub2 check"
   print *, "------------------------------------------------------------"
-  n_errors = 0
   ! iterate over tensor slices
   do mm = 1, M
     ! iterate over from rank indices
@@ -317,11 +315,14 @@ program FWMP_constraints
   deallocate(phi_l)
   deallocate(u_i)
   deallocate(u_l)
-  if (n_errors > 0) then
-    print *, "Program found ", trim(int_to_str(n_errors)), " errors ###"
-  else
-    print *, "Program completed without errors ###"
-  endif
+  select case (n_errors)
+    case (0)
+      print *, "Program completed without errors ###"
+    case (1)
+      print *, "Program completed with 1 error ###"
+    case DEFAULT
+       print *, "Program found ", trim(int_to_str(n_errors)), " errors ###"
+  end select
   print *
 
 contains
